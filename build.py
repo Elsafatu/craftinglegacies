@@ -9,8 +9,10 @@ Standard library only — nothing to install, nothing to rot.
 Python 3.8 or newer.
 """
 
+import hashlib
 import html
 import os
+import random
 import re
 import shutil
 from datetime import datetime, timezone
@@ -198,12 +200,63 @@ def meta_line(p):
     return " &middot; ".join(bits)
 
 
+
+# ── Parcel artwork ────────────────────────────────────────────────────
+# Each article draws its own survey plan, seeded from its slug, so the
+# same piece always shows the same plan and no two pieces match.
+
+def parcel_art(seed_str, w=680, h=220, parcels=12):
+    seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
+    rnd = random.Random(seed)
+
+    pad = 14
+    rects = [(pad, pad, w - 2 * pad, h - 2 * pad)]
+    for _ in range(parcels - 1):
+        i = max(range(len(rects)), key=lambda k: rects[k][2] * rects[k][3])
+        x, y, rw, rh = rects.pop(i)
+        frac = rnd.uniform(0.34, 0.66)
+        if rw >= rh:
+            cut = rw * frac
+            rects += [(x, y, cut, rh), (x + cut, y, rw - cut, rh)]
+        else:
+            cut = rh * frac
+            rects += [(x, y, rw, cut), (x, y + cut, rw, rh - cut)]
+
+    shaded = set(rnd.sample(range(len(rects)), k=min(3, len(rects))))
+    out = []
+    for i, (x, y, rw, rh) in enumerate(rects):
+        fill = "#E3D9C6" if i in shaded else "none"
+        out.append('<rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}" '
+                   'fill="{}" stroke="#0A7A4A" stroke-width="0.9" opacity="0.85"/>'
+                   .format(x, y, rw, rh, fill))
+
+    corners = []
+    for (x, y, rw, rh) in rects:
+        corners += [(x, y), (x + rw, y + rh)]
+    for (cx, cy) in rnd.sample(corners, k=min(7, len(corners))):
+        out.append('<circle cx="{:.1f}" cy="{:.1f}" r="2.6" fill="#8A6A4B"/>'
+                   .format(cx, cy))
+
+    y1, y2 = rnd.uniform(pad, h - pad), rnd.uniform(pad, h - pad)
+    out.append('<line x1="0" y1="{:.1f}" x2="{}" y2="{:.1f}" stroke="#8A6A4B" '
+               'stroke-width="0.8" stroke-dasharray="5 4" opacity="0.7"/>'
+               .format(y1, w, y2))
+
+    return ('<svg class="plan" viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid slice" '
+            'aria-hidden="true"><g transform="rotate({a:.1f} {cx} {cy}) scale(1.18) '
+            'translate({tx:.0f} {ty:.0f})">{body}</g></svg>'
+            .format(w=w, h=h, a=rnd.uniform(-11, 11), cx=w / 2, cy=h / 2,
+                    tx=-w * 0.078, ty=-h * 0.078, body="".join(out)))
+
+
 def piece_html(p, root=""):
     return """  <article class="piece">
+    <a class="plan-strip" href="{root}{url}" tabindex="-1" aria-hidden="true">{art}</a>
     <p class="meta">{meta}</p>
     <h3><a href="{root}{url}">{title}</a></h3>
     <p class="dek">{dek}</p>
   </article>""".format(meta=meta_line(p), root=root, url=p["url"],
+                       art=parcel_art(p["slug"]),
                        title=html.escape(p.get("title", "Untitled")),
                        dek=html.escape(p["standfirst"]))
 
@@ -242,6 +295,11 @@ def circle_block():
 # ── Pages ─────────────────────────────────────────────────────────────
 
 def build_home(posts):
+    portrait = ""
+    if os.path.exists(os.path.join(ROOT, "static", "portrait.jpg")):
+        portrait = ('<div class="portrait portrait--inline">'
+                    '<img src="portrait.jpg" alt="Elsa Mwalilino" '
+                    'width="560" height="700" loading="lazy"></div>')
     body = """
 <div class="opening">
   <div class="wrap wide">
@@ -277,6 +335,7 @@ def build_home(posts):
 
 <section class="about">
   <div class="wrap">
+    {portrait}
     <p class="eyebrow">About</p>
     <h2>A lawyer who kept asking why the system worked this way.</h2>
     <p>Elsa Mwalilino is a Zambian estates and real estate attorney, researcher and writer, and a
@@ -289,7 +348,8 @@ def build_home(posts):
   </div>
 </section>
 {circle}
-""".format(pieces="\n".join(piece_html(p) for p in posts[:3]), circle=circle_block())
+""".format(pieces="\n".join(piece_html(p) for p in posts[:3]),
+           portrait=portrait, circle=circle_block())
     page(body, SITE_TITLE, SITE_DESC, "index.html")
 
 
@@ -313,6 +373,14 @@ def build_writing(posts):
          "writing.html", active="writing")
 
 
+def dropcap(html_body):
+    """Give the first paragraph of an article an opening capital."""
+    i = html_body.find("<p>")
+    if i == -1:
+        return html_body
+    return html_body[:i] + '<p class="opens">' + html_body[i + 3:]
+
+
 def build_post(p):
     body = """
 <article>
@@ -322,8 +390,9 @@ def build_post(p):
       <h1>{title}</h1>
       <p class="dek">{dek}</p>
     </div>
-    <div class="rule"></div>
   </div>
+
+  <div class="plan-banner">{art}</div>
 
   <div class="wrap prose">
 {content}
@@ -333,7 +402,9 @@ def build_post(p):
 </article>
 {circle}
 """.format(meta=meta_line(p), title=html.escape(p.get("title", "Untitled")),
-           dek=html.escape(p["standfirst"]), content=markdown(p["body"]),
+           dek=html.escape(p["standfirst"]),
+           art=parcel_art(p["slug"], h=260),
+           content=dropcap(markdown(p["body"])),
            circle=circle_block())
     page(body, p.get("title", "Untitled"), p["standfirst"] or SITE_DESC,
          p["url"], active="writing", ogtype="article")
@@ -341,6 +412,11 @@ def build_post(p):
 
 def build_simple(name, active, circle=True):
     doc = read_doc(os.path.join(CONTENT, "pages", name + ".md"))
+
+    portrait = ""
+    if name == "about" and os.path.exists(os.path.join(ROOT, "static", "portrait.jpg")):
+        portrait = ('<div class="portrait"><img src="portrait.jpg" '
+                    'alt="Elsa Mwalilino" width="560" height="700"></div>')
     body = """
 <div class="pagehead">
   <div class="wrap wide">
@@ -350,11 +426,13 @@ def build_simple(name, active, circle=True):
   <div class="rule"></div>
 </div>
 
+{portrait}
+
 <div class="wrap prose">
 {content}
 </div>
 {circle}
-""".format(title=html.escape(doc.get("title", name.title())),
+""".format(title=html.escape(doc.get("title", name.title())), portrait=portrait,
            dek=html.escape(doc.get("standfirst", "")),
            content=markdown(doc["body"]),
            circle=circle_block() if circle else "")
@@ -391,6 +469,12 @@ def main():
         shutil.rmtree(OUT)
     os.makedirs(OUT)
     shutil.copy(os.path.join(THEME, "styles.css"), os.path.join(OUT, "styles.css"))
+
+    static = os.path.join(ROOT, "static")
+    if os.path.isdir(static):
+        for asset in os.listdir(static):
+            if not asset.startswith("."):
+                shutil.copy(os.path.join(static, asset), os.path.join(OUT, asset))
 
     posts = load_posts()
     build_home(posts)
