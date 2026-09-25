@@ -12,7 +12,6 @@ Python 3.8 or newer.
 import hashlib
 import html
 import os
-import random
 import re
 import shutil
 from datetime import datetime, timezone
@@ -201,62 +200,51 @@ def meta_line(p):
 
 
 
-# ── Parcel artwork ────────────────────────────────────────────────────
-# Each article draws its own survey plan, seeded from its slug, so the
-# same piece always shows the same plan and no two pieces match.
+# ── Article artwork ───────────────────────────────────────────────────
+# Photographs, washed toward the page colour. An article uses its own
+# picture if one exists as static/art-<slug>.jpg, otherwise the site's
+# default picture. Drop a file in and it appears; no code changes.
 
-def parcel_art(seed_str, w=680, h=220, parcels=12):
-    seed = int(hashlib.md5(seed_str.encode()).hexdigest()[:8], 16)
-    rnd = random.Random(seed)
+ART_EXTS = ("jpg", "jpeg", "png", "webp")
 
-    pad = 14
-    rects = [(pad, pad, w - 2 * pad, h - 2 * pad)]
-    for _ in range(parcels - 1):
-        i = max(range(len(rects)), key=lambda k: rects[k][2] * rects[k][3])
-        x, y, rw, rh = rects.pop(i)
-        frac = rnd.uniform(0.34, 0.66)
-        if rw >= rh:
-            cut = rw * frac
-            rects += [(x, y, cut, rh), (x + cut, y, rw - cut, rh)]
-        else:
-            cut = rh * frac
-            rects += [(x, y, rw, cut), (x, y + cut, rw, rh - cut)]
 
-    shaded = set(rnd.sample(range(len(rects)), k=min(3, len(rects))))
-    out = []
-    for i, (x, y, rw, rh) in enumerate(rects):
-        fill = "#E3D9C6" if i in shaded else "none"
-        out.append('<rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}" '
-                   'fill="{}" stroke="#0A7A4A" stroke-width="0.9" opacity="0.85"/>'
-                   .format(x, y, rw, rh, fill))
+def art_file(slug, allow_default=True):
+    """This article's own picture; the site default only if permitted."""
+    stems = ["art-" + slug] + (["art-default"] if allow_default else [])
+    for stem in stems:
+        for ext in ART_EXTS:
+            name = "{}.{}".format(stem, ext)
+            if os.path.exists(os.path.join(ROOT, "static", name)):
+                return name
+    return None
 
-    corners = []
-    for (x, y, rw, rh) in rects:
-        corners += [(x, y), (x + rw, y + rh)]
-    for (cx, cy) in rnd.sample(corners, k=min(7, len(corners))):
-        out.append('<circle cx="{:.1f}" cy="{:.1f}" r="2.6" fill="#8A6A4B"/>'
-                   .format(cx, cy))
 
-    y1, y2 = rnd.uniform(pad, h - pad), rnd.uniform(pad, h - pad)
-    out.append('<line x1="0" y1="{:.1f}" x2="{}" y2="{:.1f}" stroke="#8A6A4B" '
-               'stroke-width="0.8" stroke-dasharray="5 4" opacity="0.7"/>'
-               .format(y1, w, y2))
+def article_art(slug, root="", tall=False, allow_default=True):
+    name = art_file(slug, allow_default)
+    if not name:
+        return ""
+    return ('<span class="scene{t}">'
+            '<img src="{r}{n}" alt="" loading="lazy" decoding="async">'
+            '</span>').format(t=" scene--tall" if tall else "", r=root, n=name)
 
-    return ('<svg class="plan" viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid slice" '
-            'aria-hidden="true"><g transform="rotate({a:.1f} {cx} {cy}) scale(1.18) '
-            'translate({tx:.0f} {ty:.0f})">{body}</g></svg>'
-            .format(w=w, h=h, a=rnd.uniform(-11, 11), cx=w / 2, cy=h / 2,
-                    tx=-w * 0.078, ty=-h * 0.078, body="".join(out)))
+
+def strip_link(p, root):
+    # own picture only — the default belongs to the hero, not to every row
+    art = article_art(p["slug"], root, allow_default=False)
+    if not art:
+        return ""
+    return ('    <a class="plan-strip" href="{r}{u}" tabindex="-1" '
+            'aria-hidden="true">{a}</a>'.format(r=root, u=p["url"], a=art))
 
 
 def piece_html(p, root=""):
     return """  <article class="piece">
-    <a class="plan-strip" href="{root}{url}" tabindex="-1" aria-hidden="true">{art}</a>
+{art}
     <p class="meta">{meta}</p>
     <h3><a href="{root}{url}">{title}</a></h3>
     <p class="dek">{dek}</p>
   </article>""".format(meta=meta_line(p), root=root, url=p["url"],
-                       art=parcel_art(p["slug"]),
+                       art=strip_link(p, root),
                        title=html.escape(p.get("title", "Untitled")),
                        dek=html.escape(p["standfirst"]))
 
@@ -270,12 +258,10 @@ def circle_block():
                 ).format(SUBSCRIBE_ACTION)
         note = ""
     else:
-        form = ('<form class="form" onsubmit="return false">'
-                '<input type="email" placeholder="Your email address" '
-                'aria-label="Your email address">'
-                '<button type="submit">Join the Circle</button></form>')
-        note = ('<p class="form-note">Not yet connected &mdash; set SUBSCRIBE_ACTION '
-                'in build.py to make this live.</p>')
+        form = ('<p class="form-mail"><a href="mailto:hello@craftinglegacies.com'
+                '?subject=Joining%20the%20Legacy%20Circle">Write to '
+                'hello@craftinglegacies.com</a> and you will be added.</p>')
+        note = ""
 
     return """
 <section class="invite">
@@ -294,6 +280,17 @@ def circle_block():
 
 # ── Pages ─────────────────────────────────────────────────────────────
 
+def hero_art():
+    """A washed photograph behind the opening, if one has been supplied."""
+    for ext in ART_EXTS:
+        name = "hero.{}".format(ext)
+        if os.path.exists(os.path.join(ROOT, "static", name)):
+            return ('<span class="hero-bg" aria-hidden="true">'
+                    '<img src="{}" alt="" fetchpriority="high" decoding="async">'
+                    '</span>').format(name)
+    return ""
+
+
 def build_home(posts):
     portrait = ""
     if os.path.exists(os.path.join(ROOT, "static", "portrait.jpg")):
@@ -301,7 +298,8 @@ def build_home(posts):
                     '<img src="portrait.jpg" alt="Elsa Mwalilino" '
                     'width="560" height="700" loading="lazy"></div>')
     body = """
-<div class="opening">
+<div class="opening{heroclass}">
+  {hero}
   <div class="wrap wide">
     <p class="banner">By Elsa Mwalilino</p>
     <h1>Live Intentionally.<br>Build Intentionally.<br>Leave Intentionally.</h1>
@@ -349,6 +347,7 @@ def build_home(posts):
 </section>
 {circle}
 """.format(pieces="\n".join(piece_html(p) for p in posts[:3]),
+           hero=hero_art(), heroclass=" opening--image" if hero_art() else "",
            portrait=portrait, circle=circle_block())
     page(body, SITE_TITLE, SITE_DESC, "index.html")
 
@@ -381,6 +380,13 @@ def dropcap(html_body):
     return html_body[:i] + '<p class="opens">' + html_body[i + 3:]
 
 
+def banner_block(slug, root):
+    art = article_art(slug, root, tall=True)
+    if art:
+        return '  <div class="plan-banner">{}</div>'.format(art)
+    return '  <div class="wrap"><div class="rule"></div></div>'
+
+
 def build_post(p):
     body = """
 <article>
@@ -392,7 +398,7 @@ def build_post(p):
     </div>
   </div>
 
-  <div class="plan-banner">{art}</div>
+{banner}
 
   <div class="wrap prose">
 {content}
@@ -403,7 +409,7 @@ def build_post(p):
 {circle}
 """.format(meta=meta_line(p), title=html.escape(p.get("title", "Untitled")),
            dek=html.escape(p["standfirst"]),
-           art=parcel_art(p["slug"], h=260),
+           banner=banner_block(p["slug"], "../"),
            content=dropcap(markdown(p["body"])),
            circle=circle_block())
     page(body, p.get("title", "Untitled"), p["standfirst"] or SITE_DESC,
