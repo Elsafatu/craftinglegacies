@@ -157,8 +157,25 @@ def load_posts():
 with open(os.path.join(THEME, "base.html"), encoding="utf-8") as f:
     BASE = f.read()
 
-NAV = {"writing": "__NAV_WRITING__", "about": "__NAV_ABOUT__",
-       "circle": "__NAV_CIRCLE__", "contact": "__NAV_CONTACT__"}
+NAV = {"writing": "__NAV_WRITING__", "library": "__NAV_LIBRARY__",
+       "about": "__NAV_ABOUT__", "circle": "__NAV_CIRCLE__",
+       "contact": "__NAV_CONTACT__"}
+
+# ── The Library ───────────────────────────────────────────────────────
+# Each section is a Markdown file in content/library/. Add a file, add a
+# line here, and it appears. Order here is the order on the hub page.
+
+LIBRARY = [
+    ("law", "The law",
+     "The Acts that govern property, land and succession in Zambia, with a note "
+     "on what each one actually does."),
+    ("words", "The words",
+     "Legal terms in plain English \u2014 what they mean, and why they matter to you."),
+    ("cases", "The cases",
+     "Decisions of the Zambian courts that shaped how property and succession work."),
+    ("reading", "Further reading",
+     "Books, papers and reports worth your time."),
+]
 
 
 def write(path, text):
@@ -472,6 +489,139 @@ def build_simple(name, active, circle=True):
          name + ".html", active=active)
 
 
+# ── Library entries ───────────────────────────────────────────────────
+# Inside a library page, a "### Heading" followed by lines beginning with
+# "+ " becomes a citation card. The first + line is the citation, a second
+# one starting with http is the link. Everything after is the note.
+
+def library_markdown(src):
+    """Markdown, plus citation cards for ### headings with + lines."""
+    out, buf = [], []
+    lines = src.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        h = re.match(r"###\s+(.*)$", line.strip())
+        if not h:
+            buf.append(line)
+            i += 1
+            continue
+
+        # flush ordinary markdown collected so far
+        if buf:
+            out.append(markdown("\n".join(buf)))
+            buf = []
+
+        title = h.group(1)
+        i += 1
+        cite, link = "", ""
+        while i < len(lines) and lines[i].strip().startswith("+"):
+            val = lines[i].strip().lstrip("+").strip()
+            if val.lower().startswith("http"):
+                link = val
+            elif not cite:
+                cite = val
+            i += 1
+
+        note = []
+        while i < len(lines):
+            nxt = lines[i].strip()
+            if re.match(r"###\s+", nxt) or re.match(r"##\s+", nxt):
+                break
+            note.append(lines[i])
+            i += 1
+
+        heading = html.escape(title)
+        if link:
+            heading = ('<a href="{}" rel="noopener">{}</a>'
+                       .format(html.escape(link, quote=True), heading))
+
+        out.append(
+            '<div class="entry">\n'
+            '  <h3 class="entry-title">{h}</h3>\n'
+            '{c}'
+            '  <div class="entry-note">{n}</div>\n'
+            '</div>'.format(
+                h=heading,
+                c=('  <p class="entry-cite">{}</p>\n'.format(html.escape(cite))
+                   if cite else ""),
+                n=markdown("\n".join(note).strip())))
+
+    if buf:
+        out.append(markdown("\n".join(buf)))
+    return "\n".join(out)
+
+
+def library_is_draft(slug):
+    path = os.path.join(CONTENT, "library", slug + ".md")
+    if not os.path.exists(path):
+        return True
+    return read_doc(path).get("draft", "").lower() in ("true", "yes", "1")
+
+
+def build_library_hub():
+    cards = []
+    for slug, title, blurb in LIBRARY:
+        if library_is_draft(slug):
+            continue
+        cards.append(
+            '  <a class="shelf" href="library/{s}.html">\n'
+            '    <span class="shelf-title">{t}</span>\n'
+            '    <span class="shelf-blurb">{b}</span>\n'
+            '  </a>'.format(s=slug, t=html.escape(title), b=html.escape(blurb)))
+
+    body = """
+<div class="pagehead">
+  <div class="wrap wide">
+    <h1>The Library</h1>
+    <p class="dek">The law, the language and the reading behind the writing.
+    Gathered here so it is in one place, for anyone who needs it.</p>
+  </div>
+  <div class="rule"></div>
+</div>
+
+<div class="wrap">
+  <div class="shelves">
+{cards}
+  </div>
+  <p class="libnote">Everything here links to the original source rather than
+  copying it, so what you read is the version the publisher is maintaining.
+  Always check that a provision is current before relying on it.</p>
+</div>
+{circle}
+""".format(cards="\n".join(cards), circle=circle_block())
+    page(body, "The Library",
+         "Zambian legislation, legal terms in plain English, cases and further "
+         "reading on property, land and succession.",
+         "library.html", active="library")
+
+
+def build_library_page(slug, title):
+    doc = read_doc(os.path.join(CONTENT, "library", slug + ".md"))
+    body = """
+<div class="pagehead">
+  <div class="wrap wide">
+    <p class="kicker"><a href="../library.html">The Library</a></p>
+    <h1>{title}</h1>
+    <p class="dek">{dek}</p>
+  </div>
+  <div class="rule"></div>
+</div>
+
+<div class="wrap prose library">
+{content}
+  <hr>
+  <p class="readmore left"><a href="../library.html">&larr; The Library</a></p>
+</div>
+{circle}
+""".format(title=html.escape(doc.get("title", title)),
+           dek=html.escape(doc.get("standfirst", "")),
+           content=library_markdown(doc["body"]),
+           circle=circle_block())
+    page(body, doc.get("title", title), doc.get("standfirst", SITE_DESC),
+         "library/{}.html".format(slug), active="library")
+
+
 def build_feed(posts):
     dated = sorted(posts, key=lambda p: p["dt"], reverse=True)
     items = "\n".join("""  <item>
@@ -513,14 +663,22 @@ def main():
     build_writing(posts)
     for p in posts:
         build_post(p)
+    build_library_hub()
+    for slug, title, _ in LIBRARY:
+        if os.path.exists(os.path.join(CONTENT, "library", slug + ".md")):
+            build_library_page(slug, title)
+
     build_simple("about", "about")
     build_simple("legacy-circle", "circle", circle=False)
     build_simple("contact", "contact", circle=False)
     build_feed(posts)
 
     write("robots.txt", "User-agent: *\nAllow: /\nSitemap: {}/sitemap.xml\n".format(SITE_URL))
-    urls = ["index.html", "writing.html", "about.html", "legacy-circle.html",
-            "contact.html"] + [p["url"] for p in posts]
+    urls = (["index.html", "writing.html", "library.html", "about.html",
+             "legacy-circle.html", "contact.html"]
+            + ["library/{}.html".format(s) for s, _, _ in LIBRARY
+               if not library_is_draft(s)]
+            + [p["url"] for p in posts])
     write("sitemap.xml",
           '<?xml version="1.0" encoding="UTF-8"?>\n'
           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
