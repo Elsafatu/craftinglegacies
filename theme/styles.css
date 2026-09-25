@@ -495,3 +495,122 @@ footer .fine { margin-top: 1rem; font-size: .75rem; color: var(--faint); line-he
 .form-mail a { color: var(--emerald); text-decoration-color: var(--rule);
   text-underline-offset: .16em; }
 .form-mail a:hover { text-decoration-color: var(--emerald); }
+
+/* ─────────────────────────────────────────────
+   The Library
+   ───────────────────────────────────────────── */
+
+.shelves { margin: 0 0 2.5rem; }
+
+.shelf {
+  display: block;
+  padding: 1.6rem 0;
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none;
+  transition: padding-left .2s ease;
+}
+
+.shelf:first-child { border-top: 1px solid var(--rule); }
+.shelf:hover { padding-left: .5rem; }
+
+.shelf-title {
+  display: block;
+  font-family: var(--display);
+  font-size: 1.55rem;
+  font-weight: 500;
+  color: var(--emerald-bright);
+  line-height: 1.25;
+}
+
+.shelf:hover .shelf-title { color: var(--emerald); }
+
+.shelf-blurb {
+  display: block;
+  margin-top: .4rem;
+  color: var(--muted);
+  font-size: .9688rem;
+}
+
+.libnote {
+  color: var(--faint);
+  font-size: .875rem;
+  border-left: 2px solid var(--rule);
+  padding-left: 1rem;
+  margin: 0;
+}
+
+.kicker {
+  font-size: .75rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--clay);
+  margin: 0 0 1rem;
+}
+
+.kicker a { color: var(--clay); text-decoration: none; }
+.kicker a:hover { color: var(--emerald); }
+
+/* ── Citation entries ─────────────────────── */
+
+.library .entry {
+  padding: 1.75rem 0 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.library h2 + .entry,
+.library .entry:first-child { border-top: 1px solid var(--rule); }
+
+.library h2 {
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--clay);
+  margin: 3rem 0 1.25rem;
+}
+
+.entry-title {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 500;
+  line-height: 1.28;
+  margin: 0;
+  color: var(--ink);
+}
+
+.entry-title a {
+  color: var(--emerald-bright);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+}
+
+.entry-title a:hover { border-bottom-color: var(--emerald); }
+
+.entry-title a::after {
+  content: "\2197";
+  font-size: .7em;
+  margin-left: .28em;
+  color: var(--clay);
+  vertical-align: .18em;
+}
+
+.entry-cite {
+  margin: .45rem 0 0;
+  font-size: .8125rem;
+  letter-spacing: .05em;
+  color: var(--clay);
+}
+
+.entry-note { margin-top: .75rem; }
+.entry-note p { margin: 0 0 .85rem; }
+.entry-note p:last-child { margin-bottom: 0; }
+
+.library .prose p { max-width: none; }
+
+@media (max-width: 34rem) {
+  .shelf-title { font-size: 1.35rem; }
+  .entry-title { font-size: 1.22rem; }
+}
