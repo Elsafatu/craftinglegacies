@@ -207,15 +207,42 @@ def meta_line(p):
 
 ART_EXTS = ("jpg", "jpeg", "png", "webp")
 
+# Browsers rename a download when a file of that name already exists —
+# hero.jpg becomes hero_1.jpg, hero (1).jpg, hero-2.jpg and so on. Rather
+# than make that your problem every time, match those too.
+_COPY_SUFFIX = re.compile(r"^(?P<stem>.+?)[ _-]*\(?\d+\)?$")
+
+
+def _matches(filename, wanted_stem):
+    base, dot, ext = filename.rpartition(".")
+    if not dot or ext.lower() not in ART_EXTS:
+        return False
+    if base == wanted_stem:
+        return True
+    m = _COPY_SUFFIX.match(base)
+    return bool(m and m.group("stem") == wanted_stem)
+
+
+def find_art(wanted_stem):
+    """The file for this name, tolerating a browser's copy suffix."""
+    folder = os.path.join(ROOT, "static")
+    if not os.path.isdir(folder):
+        return None
+    # exact name wins; otherwise take the first renamed copy, alphabetically
+    candidates = sorted(n for n in os.listdir(folder) if _matches(n, wanted_stem))
+    for n in candidates:
+        if n.rpartition(".")[0] == wanted_stem:
+            return n
+    return candidates[0] if candidates else None
+
 
 def art_file(slug, allow_default=True):
     """This article's own picture; the site default only if permitted."""
     stems = ["art-" + slug] + (["art-default"] if allow_default else [])
     for stem in stems:
-        for ext in ART_EXTS:
-            name = "{}.{}".format(stem, ext)
-            if os.path.exists(os.path.join(ROOT, "static", name)):
-                return name
+        found = find_art(stem)
+        if found:
+            return found
     return None
 
 
@@ -282,13 +309,12 @@ def circle_block():
 
 def hero_art():
     """A washed photograph behind the opening, if one has been supplied."""
-    for ext in ART_EXTS:
-        name = "hero.{}".format(ext)
-        if os.path.exists(os.path.join(ROOT, "static", name)):
-            return ('<span class="hero-bg" aria-hidden="true">'
-                    '<img src="{}" alt="" fetchpriority="high" decoding="async">'
-                    '</span>').format(name)
-    return ""
+    name = find_art("hero")
+    if not name:
+        return ""
+    return ('<span class="hero-bg" aria-hidden="true">'
+            '<img src="{}" alt="" fetchpriority="high" decoding="async">'
+            '</span>').format(name)
 
 
 def build_home(posts):
